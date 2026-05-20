@@ -1,0 +1,6 @@
+{
+  "name": "Document RAG Chat",
+  "description": "A modern, elegant RAG (Retrieval-Augmented Generation) document search and chat system in the style of Wise. Upload PDFs, TXTs, and DOCXs to chat in real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
