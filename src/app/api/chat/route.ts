@@ -14,7 +14,7 @@ const ai = new GoogleGenAI({
 
 export async function POST(request: Request) {
   try {
-    const { message, history = [] } = await request.json();
+    const { message, history = [], docId } = await request.json();
 
     if (!message || message.trim() === "") {
       return NextResponse.json(
@@ -23,8 +23,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Retrieve the most relevant chunks from memory RAG index
-    const relevantChunks = retrieveRelevantChunks(message, 5);
+    // 1. Retrieve the most relevant chunks from memory RAG index with docId context filter
+    const relevantChunks = retrieveRelevantChunks(message, 5, docId);
 
     // 2. Format Context
     let contextText = "";

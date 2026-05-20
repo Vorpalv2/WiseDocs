@@ -68,8 +68,11 @@ export function chunkText(text: string, docId: string, docName: string): Documen
   return chunks;
 }
 
-export function retrieveRelevantChunks(query: string, limit = 5): DocumentChunk[] {
-  const chunks = memoryStore.documentChunks;
+export function retrieveRelevantChunks(query: string, limit = 5, docId?: string): DocumentChunk[] {
+  let chunks = memoryStore.documentChunks;
+  if (docId && docId !== "all") {
+    chunks = chunks.filter((c) => c.docId === docId);
+  }
   if (chunks.length === 0) return [];
 
   const queryTokens = query
