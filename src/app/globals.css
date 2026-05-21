@@ -21,6 +21,102 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Redefine theme colors for dark mode context */
+:root.dark {
+  --color-brand-canvas-soft: #0e100c;
+  --color-brand-ink: #f0f3ee;
+  --color-brand-ink-deep: #a0e871;
+  --color-brand-body: #bfc4be;
+  --color-brand-mute: #828781;
+  --color-brand-primary-pale: #15220f;
+}
+
+/* Automatic global dark mode class overrides */
+html.dark body {
+  background-color: #0e100c !important;
+  color: #f0f3ee !important;
+}
+
+html.dark .bg-white {
+  background-color: #131412 !important;
+}
+
+html.dark .bg-[#f9fbf8] {
+  background-color: #1a1c1a !important;
+}
+
+html.dark .bg-[#e8ebe6] {
+  background-color: #1d201e !important;
+}
+
+html.dark .bg-[#e8ebe6]/40 {
+  background-color: rgba(29, 32, 30, 0.4) !important;
+}
+
+html.dark .border-[#0e0f0c]/5 {
+  border-color: rgba(240, 243, 238, 0.08) !important;
+}
+
+html.dark .border-[#0e0f0c]/10 {
+  border-color: rgba(240, 243, 238, 0.15) !important;
+}
+
+html.dark .border-[#0e0f0c]/15 {
+  border-color: rgba(240, 243, 238, 0.22) !important;
+}
+
+html.dark .text-[#0e0f0c] {
+  color: #f0f3ee !important;
+}
+
+html.dark .text-[#454745] {
+  color: #bfc4be !important;
+}
+
+html.dark .text-[#868685] {
+  color: #828781 !important;
+}
+
+html.dark .hover\:text-[#0e0f0c]:hover {
+  color: #f0f3ee !important;
+}
+
+html.dark .bg-[#e2f6d5] {
+  background-color: #172c10 !important;
+}
+
+html.dark .text-[#054d28] {
+  color: #a0e871 !important;
+}
+
+html.dark .bg-[#cbd0c9]/30 {
+  background-color: rgba(240, 243, 238, 0.1) !important;
+}
+
+html.dark .bg-[#cbd0c9]/25 {
+  background-color: rgba(240, 243, 238, 0.08) !important;
+}
+
+html.dark .bg-white\/40 {
+  background-color: rgba(19, 20, 18, 0.4) !important;
+}
+
+html.dark input {
+  color: #f0f3ee !important;
+}
+
+html.dark input::placeholder {
+  color: #828781 !important;
+}
+
+html.dark .border-[#0e0f0c] {
+  border-color: #9fe870 !important;
+}
+
+html.dark .ring-[#0e0f0c] {
+  --tw-ring-color: #9fe870 !important;
+}
+
 /* Custom scrollbars matching the brand layout */
 ::-webkit-scrollbar {
   width: 6px;

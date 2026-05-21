@@ -9,9 +9,13 @@ import {
   FileCheck,
   Info,
   ChevronDown,
+  UploadCloud,
+  Cpu,
+  Settings,
+  Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChatMessage, DocumentMeta } from "../types";
 
 interface ChatComponentProps {
@@ -20,13 +24,51 @@ interface ChatComponentProps {
 
 export default function ChatComponent({ documents }: ChatComponentProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const provider = searchParams.get("provider") || "gemini";
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [selectedDocIdFilter, setSelectedDocIdFilter] = useState<string>("all");
 
+  // Local Ollama configurations persisting to localStorage
+  const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
+  const [ollamaModel, setOllamaModel] = useState("llama3");
+  const [showOllamaSettings, setShowOllamaSettings] = useState(false);
+
+  // Sync settings with browser storage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedHost = window.localStorage.getItem("wise_ollama_host");
+      const savedModel = window.localStorage.getItem("wise_ollama_model");
+      if (savedHost) setOllamaHost(savedHost);
+      if (savedModel) setOllamaModel(savedModel);
+    }
+  }, []);
+
+  const updateOllamaHost = (val: string) => {
+    setOllamaHost(val);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wise_ollama_host", val);
+    }
+  };
+
+  const updateOllamaModel = (val: string) => {
+    setOllamaModel(val);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wise_ollama_model", val);
+    }
+  };
+
+  // Drag and drop / upload states integrated into the Docs left panel
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Autoscroll chats
   useEffect(() => {
@@ -39,6 +81,67 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
       setSelectedDocIdFilter("all");
     }
   }, [documents, selectedDocIdFilter]);
+
+  // Handle Drag events
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    setUploadError(null);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      await uploadFile(file);
+    }
+  };
+
+  // Upload file parser logic
+  const uploadFile = async (file: File) => {
+    const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    if (![".pdf", ".txt", ".docx"].includes(extension)) {
+      setUploadError("Strictly select PDF, TXT, or DOCX documents.");
+      return;
+    }
+
+    setUploadError(null);
+    setIsUploading(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to process document context.");
+      }
+
+      router.refresh();
+    } catch (err: any) {
+      setUploadError(err.message || "An error occurred during verification.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      uploadFile(e.target.files[0]);
+    }
+  };
 
   // Delete individual doc
   const deleteDoc = async (id: string) => {
@@ -105,6 +208,9 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
           message: userMsg.text,
           history: historyPayload,
           docId: selectedDocIdFilter,
+          provider,
+          ollamaModel,
+          ollamaHost,
         }),
       });
 
@@ -113,10 +219,46 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
         throw new Error(data.error || "RAG engine fails response synthesis.");
       }
 
+      let responseText = "";
+
+      if (data.isLocal) {
+        // Direct browser network call to local Ollama (bypasses Server container limit, avoids tunnel setup)
+        try {
+          const localRes = await fetch(`${ollamaHost}/api/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: ollamaModel,
+              prompt: `${data.systemInstruction}\n\n${data.localPrompt}`,
+              stream: false,
+            }),
+          });
+
+          if (!localRes.ok) {
+            throw new Error(`Local Ollama service on ${ollamaHost} returned status ${localRes.status}`);
+          }
+
+          const localData = await localRes.json();
+          responseText = localData.response || "No response received from local Ollama model.";
+        } catch (localErr: any) {
+          const helpErr = `Could not connect to your local Ollama LLM at "${ollamaHost}" using model "${ollamaModel}".\n\n` +
+            `Troubleshooting checklist:\n` +
+            `1. Make sure Ollama is active on your computer.\n` +
+            `2. Start Ollama with CORS/Origins enabled to allow browser requests:\n` +
+            `   • Mac/Linux: OLLAMA_ORIGINS="*" ollama serve\n` +
+            `   • Windows: (Close Ollama from taskbar tray, then run in terminal)\n` +
+            `     set OLLAMA_ORIGINS=* && ollama serve\n` +
+            `3. Run "ollama pull ${ollamaModel}" to verify the model is downloaded.`;
+          throw new Error(helpErr);
+        }
+      } else {
+        responseText = data.response;
+      }
+
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now()}-assistant`,
         sender: "assistant",
-        text: data.response,
+        text: responseText,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         citations: data.citations || [],
       };
@@ -132,10 +274,44 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
   return (
     <section
       id="workspace-section"
-      className="bg-white rounded-[24px] border border-[#0e0f0c]/5 shadow-lg overflow-hidden flex flex-col lg:grid lg:grid-cols-12 min-h-[600px]"
+      className="bg-white rounded-[24px] border border-[#0e0f0c]/5 shadow-lg overflow-hidden flex flex-col lg:grid lg:grid-cols-12 min-h-[630px]"
     >
-      {/* Workspace Left Column: Active knowledge sources & selectors */}
-      <div className="lg:col-span-4 bg-[#e8ebe6]/40 border-r border-[#0e0f0c]/5 p-6 flex flex-col space-y-6">
+      {/* Workspace Left Column: Active knowledge sources with integrated Drag & Drop file upload zone */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`lg:col-span-4 p-6 flex flex-col space-y-5 transition-all relative ${
+          isDragging ? "bg-[#e2f6d5]/60" : "bg-[#e8ebe6]/40"
+        } border-r border-[#0e0f0c]/5`}
+      >
+        {/* Hidden File Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept=".pdf,.txt,.docx"
+          className="hidden"
+        />
+
+        {/* Highlight Overlay on Drag */}
+        <AnimatePresence>
+          {isDragging && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-[#e2f6d5]/90 z-20 flex flex-col items-center justify-center p-6 text-center"
+            >
+              <div className="w-16 h-16 bg-[#9fe870] rounded-full flex items-center justify-center shadow-md mb-3 animate-pulse">
+                <UploadCloud className="w-8 h-8 text-[#0e0f0c]" />
+              </div>
+              <p className="text-sm font-black text-[#0e0f0c]">Drop documents here</p>
+              <p className="text-xs text-[#454745] mt-1 font-semibold">Immediate pipeline indexing (.pdf, .txt, .docx)</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <FileText className="w-5 h-5 text-[#0e0f0c]" />
@@ -152,31 +328,87 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
           )}
         </div>
 
-        <p className="text-xs text-[#868685] font-semibold tracking-wide uppercase">
-          Uploaded files in index ({documents.length})
-        </p>
+        {/* Dynamic drop area or quick interactive stats indicator inside documents pipeline */}
+        {documents.length === 0 ? (
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className={`flex-1 h-64 border-2 border-dashed rounded-[20px] flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-all bg-white hover:bg-[#9fe870]/5 ${
+              isDragging ? "border-[#2ead4b] bg-[#e2f6d5]/20" : "border-[#0e0f0c]/10"
+            }`}
+          >
+            {isUploading ? (
+              <div className="flex flex-col items-center space-y-2.5">
+                <RefreshCw className="w-8 h-8 text-[#0e0f0c] animate-spin" />
+                <p className="text-sm font-bold text-[#0e0f0c]">Parsing content...</p>
+                <span className="text-[10px] text-[#868685] font-semibold">Splitting into chunks</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-[#cbd0c9]/30 flex items-center justify-center">
+                  <UploadCloud className="w-6 h-6 text-[#0e0f0c]" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-[#0e0f0c] leading-tight">Drag & Drop documents here</p>
+                  <p className="text-[11px] text-[#2ead4b] font-bold underline mt-1">or browse files to upload</p>
+                  <p className="text-[10px] text-[#868685] mt-2 leading-relaxed">PDF, Word DOCX, or raw TXT<br />up to 10MB index frame</p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col space-y-3">
+            {/* Integrated micro drag-trigger for existing index */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border border-dashed border-[#0e0f0c]/15 rounded-xl p-3 text-center cursor-pointer bg-white hover:bg-[#9fe870]/5 hover:border-[#0e0f0c]/30 transition-all flex items-center justify-center space-x-2"
+            >
+              {isUploading ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 text-[#0e0f0c] animate-spin" />
+                  <span className="text-[11px] font-bold text-[#000000]">Indexing new source...</span>
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="w-4 h-4 text-[#2ead4b]" />
+                  <span className="text-[11px] font-bold text-[#454745] hover:text-[#0e0f0c]">
+                    Drag or click to add files
+                  </span>
+                </>
+              )}
+            </div>
+
+            <p className="text-[10.5px] text-[#868685] font-semibold tracking-wide uppercase">
+              Current Index Pipeline ({documents.length})
+            </p>
+          </div>
+        )}
+
+        {/* Upload error display inside panel */}
+        <AnimatePresence>
+          {uploadError && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="p-3 bg-red-50 text-red-700 rounded-xl text-xs font-medium flex items-start space-x-2 border border-red-200"
+            >
+              <Info className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+              <span>{uploadError}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Document list card structure */}
-        <div className="flex-1 space-y-3 overflow-y-auto max-h-[350px] lg:max-h-none pr-1">
-          {documents.length === 0 ? (
-            <div className="h-48 border border-[#0e0f0c]/10 rounded-[24px] flex flex-col items-center justify-center p-4 text-center bg-[#f9fbf8]/50">
-              <div className="w-10 h-10 rounded-full bg-[#0e0f0c]/5 flex items-center justify-center mb-2">
-                <FileText className="w-5 h-5 text-[#868685]" />
-              </div>
-              <p className="text-xs font-bold text-[#0e0f0c]">No documents uploaded</p>
-              <p className="text-[11px] text-[#868685] mt-1 max-w-[180px]">
-                Drag your PDF, Word, or text files directly inside the converter card above.
-              </p>
-            </div>
-          ) : (
+        {documents.length > 0 && (
+          <div className="flex-1 space-y-2 overflow-y-auto max-h-[280px] pr-1">
             <div className="space-y-2">
               {/* Select All Filter */}
               <button
                 onClick={() => setSelectedDocIdFilter("all")}
-                className={`w-full text-left p-3.5 rounded-full transition-all border flex items-center justify-between cursor-pointer ${
+                className={`w-full text-left p-3 rounded-full transition-all border flex items-center justify-between cursor-pointer ${
                   selectedDocIdFilter === "all"
                     ? "bg-white border-[#0e0f0c] font-bold text-[#0e0f0c] shadow-xs"
-                    : "border-transparent bg-[#e8ebe6]/30 font-medium text-[#454745] hover:bg-[#cbd0c9]/40"
+                    : "border-transparent bg-white/40 font-medium text-[#454745] hover:bg-[#cbd0c9]/40"
                 }`}
               >
                 <div className="flex items-center space-x-2">
@@ -195,15 +427,15 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className={`p-3.5 rounded-full bg-[#e8ebe6]/50 border flex flex-row items-center justify-between space-y-0 relative group hover:shadow-xs transition-all cursor-pointer ${
-                      selectedDocIdFilter === doc.id ? "bg-white border-[#0e0f0c]" : "border-[#0e0f0c]/5"
+                    className={`p-2.5 rounded-full bg-white border flex flex-row items-center justify-between space-y-0 relative group hover:shadow-xs transition-all cursor-pointer ${
+                      selectedDocIdFilter === doc.id ? "border-[#0e0f0c] ring-1 ring-[#0e0f0c]" : "border-[#0e0f0c]/5"
                     }`}
                     onClick={() => setSelectedDocIdFilter(doc.id)}
                   >
                     <div className="flex items-center space-x-3 min-w-0 pr-8">
-                      <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0 shadow-sm border border-[#0e0f0c]/5">
+                      <div className="w-7 h-7 rounded-full bg-[#cbd0c9]/25 flex items-center justify-center shrink-0 border border-[#0e0f0c]/5">
                         <span
-                          className={`text-[10px] font-black ${
+                          className={`text-[8px] font-black ${
                             doc.type === "PDF"
                               ? "text-red-600"
                               : doc.type === "DOCX"
@@ -218,7 +450,7 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                         <h4 className="text-xs font-semibold text-[#0e0f0c] truncate group-hover:text-[#2ead4b] transition-colors">
                           {doc.name}
                         </h4>
-                        <p className="text-[10px] text-[#868685]">
+                        <p className="text-[9px] text-[#868685]">
                           {(doc.size / 1024).toFixed(1)} KB · {doc.chunksCount} chunks
                         </p>
                       </div>
@@ -229,7 +461,7 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                         e.stopPropagation();
                         deleteDoc(doc.id);
                       }}
-                      className="text-[#868685] hover:text-[#d03238] transition-colors p-1.5 rounded-full hover:bg-white cursor-pointer absolute right-2"
+                      className="text-[#868685] hover:text-[#d03238] transition-colors p-1 rounded-full hover:bg-red-50 cursor-pointer absolute right-2"
                       title="Remove Document"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -238,16 +470,86 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                 ))}
               </AnimatePresence>
             </div>
-          )}
-        </div>
-
-        <div className="bg-white p-5 rounded-[24px] border border-[#0e0f0c]/5 text-xs text-[#454745] space-y-2">
-          <div className="flex items-center space-x-1.5 text-[#0e0f0c] font-bold">
-            <Info className="w-4 h-4 text-[#2ead4b]" />
-            <span>How RAG Retrieval works</span>
           </div>
-          <p className="leading-relaxed text-[#868685]">
-            When you submit a query, the Wise server processes the question and prioritizes search overlap matches across your index. Selected reference chunks are compiled into safe, contextual parameters which are passed securely to Gemini for answer formulation.
+        )}
+
+        {provider === "ollama" && (
+          <div className="bg-white p-4 rounded-[20px] border border-[#0e0f0c]/5 text-xs space-y-3 shadow-xs">
+            <div className="flex items-center justify-between text-[#0e0f0c] font-bold">
+              <div className="flex items-center space-x-1.5">
+                <Cpu className="w-4 h-4 text-[#2ead4b]" />
+                <span>Ollama LLM Config</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOllamaSettings(!showOllamaSettings)}
+                className="text-xs text-[#868685] hover:text-[#0e0f0c] p-1 rounded hover:bg-[#e8ebe6] transition-colors"
+                title="Configure Ollama connection details"
+              >
+                <Settings className={`w-3.5 h-3.5 transition-transform ${showOllamaSettings ? "rotate-45" : ""}`} />
+              </button>
+            </div>
+            
+            <p className="text-[10px] text-[#868685] leading-relaxed">
+              Configure connection parameters for local or remote Ollama instances.
+            </p>
+
+            <div className="bg-[#e8ebe6]/40 p-2.5 rounded-xl text-[11px] font-semibold text-[#0e0f0c] flex items-center justify-between">
+              <span>Model: <span className="font-bold underline text-[#2ead4b]">{ollamaModel}</span></span>
+              <span className="text-[9px] bg-[#9fe870] text-[#0e0f0c] px-2 py-0.5 rounded-full uppercase font-bold tracking-wide">
+                Activated
+              </span>
+            </div>
+
+            <AnimatePresence>
+              {showOllamaSettings && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-3 pt-1 overflow-hidden"
+                >
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#868685] uppercase tracking-wider block">
+                      Ollama API Host
+                    </label>
+                    <input
+                      type="text"
+                      value={ollamaHost}
+                      onChange={(e) => updateOllamaHost(e.target.value)}
+                      placeholder="e.g. http://localhost:11434"
+                      className="w-full text-xs font-semibold border border-[#0e0f0c]/10 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-[#9fe870] bg-white text-[#0e0f0c]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#868685] uppercase tracking-wider block">
+                      Active Model Name
+                    </label>
+                    <input
+                      type="text"
+                      value={ollamaModel}
+                      onChange={(e) => updateOllamaModel(e.target.value)}
+                      placeholder="e.g. llama3, mistral"
+                      className="w-full text-xs font-semibold border border-[#0e0f0c]/10 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-[#9fe870] bg-white text-[#0e0f0c]"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        <div className="bg-white p-4 rounded-[20px] border border-[#0e0f0c]/5 text-xs text-[#454745] space-y-1.5 shadow-xs">
+          <div className="flex items-center space-x-1.5 text-[#0e0f0c] font-bold">
+            <Info className="w-3.5 h-3.5 text-[#2ead4b]" />
+            <span>How RAG works</span>
+          </div>
+          <p className="leading-relaxed text-[#868685] text-[10.5px]">
+            {provider === "ollama" ? (
+              "Your search query prioritizes semantic chunks securely parsed on our server, which are immediately sent back to your local Ollama instance for local contextual execution."
+            ) : (
+              "Your queries prioritize matching overlapping text chunks securely parsed on our server, which are immediately passed to Gemini 3.5 Flash for contextual answer synthesis."
+            )}
           </p>
         </div>
       </div>
@@ -258,14 +560,21 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
         <header className="border-b border-[#0e0f0c]/5 pb-4 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-[#e2f6d5] flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2ead4b" stroke-width="2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2ead4b" strokeWidth="2">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
             </div>
             <div>
-              <h3 className="font-black text-lg text-[#0e0f0c] leading-none mb-1">
-                {messages.length > 0 ? "Analyzing Documents" : "Ready to Interrogate"}
-              </h3>
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-black text-lg text-[#0e0f0c] leading-none">
+                  {messages.length > 0 ? "Analyzing Documents" : "Ready to Interrogate"}
+                </h3>
+                <span className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full ${
+                  provider === "ollama" ? "bg-amber-100 text-amber-900 border border-[#b45309]/10" : "bg-[#e2f6d5] text-[#054d28]"
+                }`}>
+                  {provider === "ollama" ? `Ollama (${ollamaModel})` : "Gemini 3.5 Flash"}
+                </span>
+              </div>
               <p className="text-xs text-[#868685]">
                 {selectedDocIdFilter === "all"
                   ? `Searching all ${documents.length} sources`
@@ -289,17 +598,17 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
         <div className="flex-1 overflow-y-auto mb-4 space-y-6 pr-1">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center max-w-md mx-auto text-center space-y-4">
-              <div className="w-14 h-14 rounded-full bg-[#e8ebe6] flex items-center justify-center text-[#2ead4b]">
+              <div className="w-14 h-14 rounded-full bg-[#cbd0c9]/30 flex items-center justify-center text-[#2ead4b]">
                 <MessageCircle className="w-7 h-7" />
               </div>
               <div>
                 <h4 className="font-black text-lg tracking-tight text-[#0e0f0c]">
                   Operational workspace is primed
                 </h4>
-                <p className="text-xs text-[#868685] mt-1 max-w-sm font-medium">
+                <p className="text-xs text-[#868685] mt-1 max-w-sm font-semibold">
                   {documents.length > 0
-                    ? "Enter your question or reference below to search, extract, and consult your document context directly."
-                    : "Upload a TXT, PDF, or Word file first to enable the contextual retrieval conversation frame."}
+                    ? "Enter your question below to extract, prioritize, or consult your document context directly."
+                    : "Upload local files or drag them directly into the Document tab on the left to activate conversation."}
                 </p>
               </div>
 
@@ -370,7 +679,7 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                             <span>Inspect exact text mappings</span>
                             <ChevronDown className="w-3 h-3 transform group-open:rotate-180 transition-transform" />
                           </summary>
-                          <div className="mt-2 bg-white border border-[#0e0f0c]/5 rounded-[16px] p-3 space-y-2 max-h-[150px] overflow-y-auto">
+                          <div className="mt-2 bg-white border border-[#0e0f0c]/5 rounded-[16px] p-3 space-y-2 max-h-[150px] overflow-y-auto w-full">
                             {msg.citations.map((cit, cIdx) => (
                               <div key={cIdx} className="text-[11px] text-[#454745] border-l-2 border-[#2ead4b] pl-2.5">
                                 <span className="font-bold block text-[#0e0f0c]">{cit.docName}:</span>
@@ -428,7 +737,7 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
               onChange={(e) => setUserInput(e.target.value)}
               placeholder={
                 documents.length === 0
-                  ? "🔒 Upload files first to enable conversation"
+                  ? "🔒 Upload files in the sidebar list to start"
                   : "Ask about your documents..."
               }
               disabled={documents.length === 0 || isSending}
@@ -444,7 +753,7 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
               }`}
               title="Submit Query"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0e0f0c" stroke-width="2.5">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0e0f0c" strokeWidth="2.5">
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>

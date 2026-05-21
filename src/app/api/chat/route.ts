@@ -14,7 +14,14 @@ const ai = new GoogleGenAI({
 
 export async function POST(request: Request) {
   try {
-    const { message, history = [], docId } = await request.json();
+    const { 
+      message, 
+      history = [], 
+      docId, 
+      provider = "gemini", 
+      ollamaModel = "llama3", 
+      ollamaHost = "http://localhost:11434" 
+    } = await request.json();
 
     if (!message || message.trim() === "") {
       return NextResponse.json(
@@ -58,7 +65,67 @@ export async function POST(request: Request) {
     
     Current User Question: "${message}"`;
 
-    // 5. Query GenAI with both the model name and prompt
+    const citations = relevantChunks.map((chunk) => ({
+      docName: chunk.docName,
+      text: chunk.text,
+    }));
+
+    // 5. Query Gemini or Local/Remote Ollama depending on active provider
+    if (provider === "ollama") {
+      const isLoopback = 
+        ollamaHost.includes("localhost") || 
+        ollamaHost.includes("127.0.0.1") || 
+        ollamaHost.includes("::1");
+
+      if (isLoopback) {
+        // For security and loopback accessibility, direct browser calls (client-side) bypass CORS constraints
+        // so we return the prompt payloads for client-side local LLM resolution
+        return NextResponse.json({
+          success: true,
+          isLocal: true,
+          localPrompt: fullPrompt,
+          systemInstruction: systemInstruction,
+          citations,
+        });
+      }
+
+      // If remote, compile server-side using standard node-fetch
+      try {
+        const ollamaRes = await fetch(`${ollamaHost}/api/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: ollamaModel,
+            prompt: `${systemInstruction}\n\n${fullPrompt}`,
+            stream: false,
+          }),
+        });
+
+        if (!ollamaRes.ok) {
+          const errText = await ollamaRes.text();
+          throw new Error(`Ollama server returned status ${ollamaRes.status}: ${errText}`);
+        }
+
+        const ollamaData = await ollamaRes.json();
+        const replyText = ollamaData.response || "No response received from Ollama.";
+
+        return NextResponse.json({
+          success: true,
+          response: replyText,
+          citations,
+        });
+      } catch (ollamaErr: any) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Unable to establish endpoint pipeline to Remote Ollama at ${ollamaHost}: ${ollamaErr.message || ollamaErr}`,
+          },
+          { status: 502 }
+        );
+      }
+    }
+
+    // Default: Gemini API pipeline
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: fullPrompt,
@@ -73,10 +140,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       response: replyText,
-      citations: relevantChunks.map((chunk) => ({
-        docName: chunk.docName,
-        text: chunk.text,
-      })),
+      citations,
     });
   } catch (error: any) {
     console.error("Next.js Chat API error:", error);
