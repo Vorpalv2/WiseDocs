@@ -13,6 +13,7 @@ import {
   Cpu,
   Settings,
   Sparkles,
+  Check,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -66,9 +67,20 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (uploadError != null || uploadSuccess != null) {
+      const timer = setTimeout(() => {
+        setUploadError(null);
+        setUploadSuccess(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [uploadError, uploadSuccess]);
 
   // Autoscroll chats
   useEffect(() => {
@@ -77,7 +89,10 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
 
   // Sync state if selected document was deleted
   useEffect(() => {
-    if (selectedDocIdFilter !== "all" && !documents.some((d) => d.id === selectedDocIdFilter)) {
+    if (
+      selectedDocIdFilter !== "all" &&
+      !documents.some((d) => d.id === selectedDocIdFilter)
+    ) {
       setSelectedDocIdFilter("all");
     }
   }, [documents, selectedDocIdFilter]);
@@ -125,8 +140,13 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
       });
 
       const data = await res.json();
+
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Failed to process document context.");
+      }
+      setUploadSuccess(data.successMessage);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
 
       router.refresh();
@@ -162,7 +182,9 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
 
   // Clear all docs
   const clearAllDocs = async () => {
-    if (confirm("Are you sure you want to clear your current database pipeline?")) {
+    if (
+      confirm("Are you sure you want to clear your current database pipeline?")
+    ) {
       try {
         const res = await fetch("/api/documents", {
           method: "DELETE",
@@ -188,7 +210,10 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
       id: `msg-${Date.now()}-user`,
       sender: "user",
       text: userInput,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -235,13 +260,18 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
           });
 
           if (!localRes.ok) {
-            throw new Error(`Local Ollama service on ${ollamaHost} returned status ${localRes.status}`);
+            throw new Error(
+              `Local Ollama service on ${ollamaHost} returned status ${localRes.status}`,
+            );
           }
 
           const localData = await localRes.json();
-          responseText = localData.response || "No response received from local Ollama model.";
+          responseText =
+            localData.response ||
+            "No response received from local Ollama model.";
         } catch (localErr: any) {
-          const helpErr = `Could not connect to your local Ollama LLM at "${ollamaHost}" using model "${ollamaModel}".\n\n` +
+          const helpErr =
+            `Could not connect to your local Ollama LLM at "${ollamaHost}" using model "${ollamaModel}".\n\n` +
             `Troubleshooting checklist:\n` +
             `1. Make sure Ollama is active on your computer.\n` +
             `2. Start Ollama with CORS/Origins enabled to allow browser requests:\n` +
@@ -259,7 +289,10 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
         id: `msg-${Date.now()}-assistant`,
         sender: "assistant",
         text: responseText,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
         citations: data.citations || [],
       };
 
@@ -306,8 +339,12 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
               <div className="w-16 h-16 bg-[#9fe870] rounded-full flex items-center justify-center shadow-md mb-3 animate-pulse">
                 <UploadCloud className="w-8 h-8 text-[#0e0f0c]" />
               </div>
-              <p className="text-sm font-black text-[#0e0f0c]">Drop documents here</p>
-              <p className="text-xs text-[#454745] mt-1 font-semibold">Immediate pipeline indexing (.pdf, .txt, .docx)</p>
+              <p className="text-sm font-black text-[#0e0f0c]">
+                Drop documents here
+              </p>
+              <p className="text-xs text-[#454745] mt-1 font-semibold">
+                Immediate pipeline indexing (.pdf, .txt, .docx)
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -315,7 +352,9 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <FileText className="w-5 h-5 text-[#0e0f0c]" />
-            <h3 className="font-extrabold text-lg text-[#0e0f0c] tracking-tight">Documents</h3>
+            <h3 className="font-extrabold text-lg text-[#0e0f0c] tracking-tight">
+              Documents
+            </h3>
           </div>
           {documents.length > 0 && (
             <button
@@ -333,14 +372,20 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
           <div
             onClick={() => fileInputRef.current?.click()}
             className={`flex-1 h-64 border-2 border-dashed rounded-[20px] flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-all bg-white hover:bg-[#9fe870]/5 ${
-              isDragging ? "border-[#2ead4b] bg-[#e2f6d5]/20" : "border-[#0e0f0c]/10"
+              isDragging
+                ? "border-[#2ead4b] bg-[#e2f6d5]/20"
+                : "border-[#0e0f0c]/10"
             }`}
           >
             {isUploading ? (
               <div className="flex flex-col items-center space-y-2.5">
                 <RefreshCw className="w-8 h-8 text-[#0e0f0c] animate-spin" />
-                <p className="text-sm font-bold text-[#0e0f0c]">Parsing content...</p>
-                <span className="text-[10px] text-[#868685] font-semibold">Splitting into chunks</span>
+                <p className="text-sm font-bold text-[#0e0f0c]">
+                  Parsing content...
+                </p>
+                <span className="text-[10px] text-[#868685] font-semibold">
+                  Splitting into chunks
+                </span>
               </div>
             ) : (
               <div className="flex flex-col items-center space-y-3">
@@ -348,9 +393,17 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                   <UploadCloud className="w-6 h-6 text-[#0e0f0c]" />
                 </div>
                 <div>
-                  <p className="text-xs font-black text-[#0e0f0c] leading-tight">Drag & Drop documents here</p>
-                  <p className="text-[11px] text-[#2ead4b] font-bold underline mt-1">or browse files to upload</p>
-                  <p className="text-[10px] text-[#868685] mt-2 leading-relaxed">PDF, Word DOCX, or raw TXT<br />up to 10MB index frame</p>
+                  <p className="text-xs font-black text-[#0e0f0c] leading-tight">
+                    Drag & Drop documents here
+                  </p>
+                  <p className="text-[11px] text-[#2ead4b] font-bold underline mt-1">
+                    or browse files to upload
+                  </p>
+                  <p className="text-[10px] text-[#868685] mt-2 leading-relaxed">
+                    PDF, Word DOCX, or raw TXT
+                    <br />
+                    up to 10MB index frame
+                  </p>
                 </div>
               </div>
             )}
@@ -365,7 +418,9 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
               {isUploading ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 text-[#0e0f0c] animate-spin" />
-                  <span className="text-[11px] font-bold text-[#000000]">Indexing new source...</span>
+                  <span className="text-[11px] font-bold text-[#000000]">
+                    Indexing new source...
+                  </span>
                 </>
               ) : (
                 <>
@@ -398,6 +453,21 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
           )}
         </AnimatePresence>
 
+        {/* Success message display inside panel */}
+        <AnimatePresence>
+          {uploadSuccess && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="p-3 bg-green-50 text-green-700 rounded-xl text-xs font-medium flex items-start space-x-2 border border-green-200"
+            >
+              <Check className="w-4 h-4 shrink-0 text-green-600 mt-0.5" />
+              <span>{uploadSuccess}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Document list card structure */}
         {documents.length > 0 && (
           <div className="flex-1 space-y-2 overflow-y-auto max-h-[280px] pr-1">
@@ -413,7 +483,9 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
               >
                 <div className="flex items-center space-x-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#2ead4b]" />
-                  <span className="text-xs font-semibold tracking-wide">All Activated Sources</span>
+                  <span className="text-xs font-semibold tracking-wide">
+                    All Activated Sources
+                  </span>
                 </div>
                 <span className="text-[10px] bg-[#0e0f0c]/5 px-2 py-0.5 rounded-full font-bold">
                   {documents.length}
@@ -428,7 +500,9 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     className={`p-2.5 rounded-full bg-white border flex flex-row items-center justify-between space-y-0 relative group hover:shadow-xs transition-all cursor-pointer ${
-                      selectedDocIdFilter === doc.id ? "border-[#0e0f0c] ring-1 ring-[#0e0f0c]" : "border-[#0e0f0c]/5"
+                      selectedDocIdFilter === doc.id
+                        ? "border-[#0e0f0c] ring-1 ring-[#0e0f0c]"
+                        : "border-[#0e0f0c]/5"
                     }`}
                     onClick={() => setSelectedDocIdFilter(doc.id)}
                   >
@@ -439,8 +513,8 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                             doc.type === "PDF"
                               ? "text-red-600"
                               : doc.type === "DOCX"
-                              ? "text-blue-600"
-                              : "text-gray-600"
+                                ? "text-blue-600"
+                                : "text-gray-600"
                           }`}
                         >
                           {doc.type}
@@ -451,7 +525,8 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                           {doc.name}
                         </h4>
                         <p className="text-[9px] text-[#868685]">
-                          {(doc.size / 1024).toFixed(1)} KB · {doc.chunksCount} chunks
+                          {(doc.size / 1024).toFixed(1)} KB · {doc.chunksCount}{" "}
+                          chunks
                         </p>
                       </div>
                     </div>
@@ -486,16 +561,24 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                 className="text-xs text-[#868685] hover:text-[#0e0f0c] p-1 rounded hover:bg-[#e8ebe6] transition-colors"
                 title="Configure Ollama connection details"
               >
-                <Settings className={`w-3.5 h-3.5 transition-transform ${showOllamaSettings ? "rotate-45" : ""}`} />
+                <Settings
+                  className={`w-3.5 h-3.5 transition-transform ${showOllamaSettings ? "rotate-45" : ""}`}
+                />
               </button>
             </div>
-            
+
             <p className="text-[10px] text-[#868685] leading-relaxed">
-              Configure connection parameters for local or remote Ollama instances.
+              Configure connection parameters for local or remote Ollama
+              instances.
             </p>
 
             <div className="bg-[#e8ebe6]/40 p-2.5 rounded-xl text-[11px] font-semibold text-[#0e0f0c] flex items-center justify-between">
-              <span>Model: <span className="font-bold underline text-[#2ead4b]">{ollamaModel}</span></span>
+              <span>
+                Model:{" "}
+                <span className="font-bold underline text-[#2ead4b]">
+                  {ollamaModel}
+                </span>
+              </span>
               <span className="text-[9px] bg-[#9fe870] text-[#0e0f0c] px-2 py-0.5 rounded-full uppercase font-bold tracking-wide">
                 Activated
               </span>
@@ -545,11 +628,9 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
             <span>How RAG works</span>
           </div>
           <p className="leading-relaxed text-[#868685] text-[10.5px]">
-            {provider === "ollama" ? (
-              "Your search query prioritizes semantic chunks securely parsed on our server, which are immediately sent back to your local Ollama instance for local contextual execution."
-            ) : (
-              "Your queries prioritize matching overlapping text chunks securely parsed on our server, which are immediately passed to Gemini 3.5 Flash for contextual answer synthesis."
-            )}
+            {provider === "ollama"
+              ? "Your search query prioritizes semantic chunks securely parsed on our server, which are immediately sent back to your local Ollama instance for local contextual execution."
+              : "Your queries prioritize matching overlapping text chunks securely parsed on our server, which are immediately passed to Gemini 3.5 Flash for contextual answer synthesis."}
           </p>
         </div>
       </div>
@@ -560,19 +641,34 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
         <header className="border-b border-[#0e0f0c]/5 pb-4 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-[#e2f6d5] flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2ead4b" strokeWidth="2">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#2ead4b"
+                strokeWidth="2"
+              >
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="font-black text-lg text-[#0e0f0c] leading-none">
-                  {messages.length > 0 ? "Analyzing Documents" : "Ready to Interrogate"}
+                  {messages.length > 0
+                    ? "Analyzing Documents"
+                    : "Ready to Interrogate"}
                 </h3>
-                <span className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full ${
-                  provider === "ollama" ? "bg-amber-100 text-amber-900 border border-[#b45309]/10" : "bg-[#e2f6d5] text-[#054d28]"
-                }`}>
-                  {provider === "ollama" ? `Ollama (${ollamaModel})` : "Gemini 3.5 Flash"}
+                <span
+                  className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full ${
+                    provider === "ollama"
+                      ? "bg-amber-100 text-amber-900 border border-[#b45309]/10"
+                      : "bg-[#e2f6d5] text-[#054d28]"
+                  }`}
+                >
+                  {provider === "ollama"
+                    ? `Ollama (${ollamaModel})`
+                    : "Gemini 3.5 Flash"}
                 </span>
               </div>
               <p className="text-xs text-[#868685]">
@@ -616,14 +712,22 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                 <div className="flex flex-wrap justify-center gap-1.5 pt-2">
                   <button
                     type="button"
-                    onClick={() => setUserInput("Can you summarize the main findings in these documents?")}
+                    onClick={() =>
+                      setUserInput(
+                        "Can you summarize the main findings in these documents?",
+                      )
+                    }
                     className="text-[11px] bg-[#e8ebe6] hover:bg-[#cbd0c9] text-[#0e0f0c] px-3.5 py-1.5 rounded-full font-bold transition-all border border-[#0e0f0c]/5 cursor-pointer"
                   >
                     "Can you summarize findings?"
                   </button>
                   <button
                     type="button"
-                    onClick={() => setUserInput("What are the key statistics or figures mentioned?")}
+                    onClick={() =>
+                      setUserInput(
+                        "What are the key statistics or figures mentioned?",
+                      )
+                    }
                     className="text-[11px] bg-[#e8ebe6] hover:bg-[#cbd0c9] text-[#0e0f0c] px-3.5 py-1.5 rounded-full font-bold transition-all border border-[#0e0f0c]/5 cursor-pointer"
                   >
                     "What key figures are mentioned?"
@@ -637,12 +741,16 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                 <div
                   key={msg.id}
                   className={`flex gap-4 max-w-[85%] ${
-                    msg.sender === "user" ? "self-end flex-row-reverse ml-auto" : "items-start"
+                    msg.sender === "user"
+                      ? "self-end flex-row-reverse ml-auto"
+                      : "items-start"
                   }`}
                 >
                   <div
                     className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold ${
-                      msg.sender === "user" ? "bg-black text-white" : "bg-[#9fe870] text-[#0e0f0c]"
+                      msg.sender === "user"
+                        ? "bg-black text-white"
+                        : "bg-[#9fe870] text-[#0e0f0c]"
                     }`}
                   >
                     {msg.sender === "user" ? "AA" : "AI"}
@@ -655,41 +763,56 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
                         : "bg-[#f9fbf8] text-[#0e0f0c] rounded-tl-none border border-[#0e0f0c]/5 text-sm shadow-xs"
                     }`}
                   >
-                    <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+                    <div className="whitespace-pre-wrap leading-relaxed">
+                      {msg.text}
+                    </div>
 
-                    {msg.sender === "assistant" && msg.citations && msg.citations.length > 0 && (
-                      <div className="mt-4 pt-3 border-t border-[#0e0f0c]/5 space-y-1.5">
-                        <span className="text-[10px] font-bold text-[#868685] uppercase tracking-wider block">
-                          Active Reference Citations ({msg.citations.length})
-                        </span>
-                        <div className="flex flex-wrap gap-1">
-                          {Array.from(new Set(msg.citations.map((c) => c.docName))).map((docName, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center space-x-1 bg-[#e2f6d5] text-[#054d28] px-2.5 py-1 rounded-full text-[10px] font-semibold border border-[#2bad4b]/10"
-                            >
-                              <FileCheck className="w-2.5 h-2.5" />
-                              <span className="truncate max-w-[150px]">{docName}</span>
-                            </span>
-                          ))}
-                        </div>
-
-                        <details className="group mt-2">
-                          <summary className="text-[10px] font-bold text-[#2ead4b] cursor-pointer hover:underline flex items-center space-x-1 outline-none">
-                            <span>Inspect exact text mappings</span>
-                            <ChevronDown className="w-3 h-3 transform group-open:rotate-180 transition-transform" />
-                          </summary>
-                          <div className="mt-2 bg-white border border-[#0e0f0c]/5 rounded-[16px] p-3 space-y-2 max-h-[150px] overflow-y-auto w-full">
-                            {msg.citations.map((cit, cIdx) => (
-                              <div key={cIdx} className="text-[11px] text-[#454745] border-l-2 border-[#2ead4b] pl-2.5">
-                                <span className="font-bold block text-[#0e0f0c]">{cit.docName}:</span>
-                                <span className="italic block mt-0.5 opacity-90">"{cit.text}"</span>
-                              </div>
+                    {msg.sender === "assistant" &&
+                      msg.citations &&
+                      msg.citations.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-[#0e0f0c]/5 space-y-1.5">
+                          <span className="text-[10px] font-bold text-[#868685] uppercase tracking-wider block">
+                            Active Reference Citations ({msg.citations.length})
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {Array.from(
+                              new Set(msg.citations.map((c) => c.docName)),
+                            ).map((docName, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center space-x-1 bg-[#e2f6d5] text-[#054d28] px-2.5 py-1 rounded-full text-[10px] font-semibold border border-[#2bad4b]/10"
+                              >
+                                <FileCheck className="w-2.5 h-2.5" />
+                                <span className="truncate max-w-[150px]">
+                                  {docName}
+                                </span>
+                              </span>
                             ))}
                           </div>
-                        </details>
-                      </div>
-                    )}
+
+                          <details className="group mt-2">
+                            <summary className="text-[10px] font-bold text-[#2ead4b] cursor-pointer hover:underline flex items-center space-x-1 outline-none">
+                              <span>Inspect exact text mappings</span>
+                              <ChevronDown className="w-3 h-3 transform group-open:rotate-180 transition-transform" />
+                            </summary>
+                            <div className="mt-2 bg-white border border-[#0e0f0c]/5 rounded-[16px] p-3 space-y-2 max-h-[150px] overflow-y-auto w-full">
+                              {msg.citations.map((cit, cIdx) => (
+                                <div
+                                  key={cIdx}
+                                  className="text-[11px] text-[#454745] border-l-2 border-[#2ead4b] pl-2.5"
+                                >
+                                  <span className="font-bold block text-[#0e0f0c]">
+                                    {cit.docName}:
+                                  </span>
+                                  <span className="italic block mt-0.5 opacity-90">
+                                    "{cit.text}"
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        </div>
+                      )}
                     <div className="text-[10px] text-[#868685] text-right mt-1.5 font-medium opacity-80">
                       {msg.timestamp}
                     </div>
@@ -745,7 +868,9 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
             />
             <button
               type="submit"
-              disabled={documents.length === 0 || !userInput.trim() || isSending}
+              disabled={
+                documents.length === 0 || !userInput.trim() || isSending
+              }
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
                 documents.length > 0 && userInput.trim() && !isSending
                   ? "bg-[#9fe870] text-[#0e0f0c] hover:bg-[#cdffad]"
@@ -753,14 +878,22 @@ export default function ChatComponent({ documents }: ChatComponentProps) {
               }`}
               title="Submit Query"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0e0f0c" strokeWidth="2.5">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#0e0f0c"
+                strokeWidth="2.5"
+              >
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             </button>
           </div>
           <p className="text-[10px] text-[#868685] text-center mt-2.5 font-semibold">
-            This indexing channel is fully client-contained within memory for maximum security.
+            This indexing channel is fully client-contained within memory for
+            maximum security.
           </p>
         </form>
       </div>
