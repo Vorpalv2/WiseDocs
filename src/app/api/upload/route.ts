@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       // The fork uses the same interface: accepts a buffer, returns an object with a .text property
       const parsedPdf = await pdfParse(fileBuffer);
       textContent = parsedPdf.text;
-      await UploadFileIntoSupabaseStorage(file);
+      // await UploadFileIntoSupabaseStorage(file);
     } else if (extension === ".txt") {
       textContent = fileBuffer.toString("utf-8");
     } else if (extension === ".docx") {
@@ -70,7 +70,12 @@ export async function POST(req: Request) {
     );
     const { data: docRecord, error: docError } = await supabaseAdmin
       .from("documents")
-      .insert({ filename: filename, status: "processing" })
+      .insert({
+        name: filename,
+        size: file.size,
+        type: extension,
+        status: "processing",
+      })
       .select("id")
       .single();
 
